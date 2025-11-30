@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitGoal AI - Gerador de Treinos</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Animações Customizadas */
+        @keyframes scan {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .animate-scan { animation: scan 2s linear infinite; }
+        
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Esconder scrollbar mas manter funcionalidade */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex justify-center">
+
+    <!-- Container Principal (Mobile View) -->
+    <div class="w-full max-w-md bg-gray-900 min-h-screen shadow-2xl relative border-x border-gray-800 flex flex-col">
+        
+        <!-- Header -->
+        <header class="p-6 flex items-center justify-between z-10 bg-gray-900/95 backdrop-blur-sm sticky top-0 border-b border-gray-800">
+            <div class="flex items-center gap-2">
+                <div class="bg-blue-600 p-1.5 rounded-lg">
+                    <i data-lucide="activity" class="text-white w-5 h-5"></i>
+                </div>
+                <h1 class="text-xl font-bold tracking-tight">FitGoal <span class="text-blue-500">AI</span></h1>
+            </div>
+            <button id="btn-back" class="hidden text-gray-400 hover:text-white text-sm font-medium">
+                Voltar
+            </button>
+            <!-- Indicador de Status do Firebase -->
+            <div id="firebase-status" class="w-2 h-2 rounded-full bg-red-500" title="Desconectado"></div>
+        </header>
+
+        <!-- Conteúdo Principal -->
+        <main id="app-content" class="flex-1 p-6 flex flex-col relative z-10 overflow-y-auto scrollbar-hide">
+            <!-- Os passos serão injetados aqui via JavaScript -->
+        </main>
+        
+        <!-- Background Decorativo -->
+        <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[100px]"></div>
+            <div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[80px]"></div>
+        </div>
+
+    </div>
+
+    <!-- Scripts do Firebase e Lógica da Aplicação -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // --- Configuração do Firebase ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let currentUser = null;
+
+        // --- Estado da Aplicação ---
+        const state = {
+            step: 1,
+            currentPhoto: null,
+            goalPhoto: null,
+            // Recupera do LocalStorage ou usa padrão
+            frequency: parseInt(localStorage.getItem('fitgoal_frequency')) || 4,
+            duration: parseInt(localStorage.getItem('fitgoal_duration')) || 60,
+            isAnalyzing: false,
+            generatedPlan: null
+        };
+
+        // --- Autenticação Firebase ---
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Erro na autenticação:", error);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('firebase-status').className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]";
+                document.getElementById('firebase-status').title = "Conectado";
+                console.log("Usuário conectado:", user.uid);
+            } else {
+                document.getElementById('firebase-status').className = "w-2 h-2 rounded-full bg-red-500";
+            }
+        });
+
+        initAuth();
+
+        // --- Lógica de Renderização ---
+
+        const container = document.getElementById('app-content');
+        const btnBack = document.getElementById('btn-back');
+
+        function render() {
+            // Controla visibilidade do botão voltar
+            if (state.step > 1 && state.step < 4) {
+                btnBack.classList.remove('hidden');
+                btnBack.onclick = () => { state.step--; render(); };
+            } else {
+                btnBack.classList.add('hidden');
+            }
+
+            container.innerHTML = ''; // Limpa container
+
+            // Renderiza Step Indicators
+            const indicators = document.createElement('div');
+            indicators.className = "flex justify-center space-x-2 mb-8";
+            [1, 2, 3, 4].forEach(i => {
+                const dot = document.createElement('div');
+                let colorClass = state.step === i ? 'w-8 bg-blue-500' : state.step > i ? 'bg-green-500' : 'bg-gray-700';
+                dot.className = `h-2 w-2 rounded-full transition-all duration-300 ${colorClass}`;
+                indicators.appendChild(dot);
+            });
+            container.appendChild(indicators);
+
+            // Renderiza o conteúdo do passo atual
+            if (state.step === 1) renderStep1();
+            else if (state.step === 2) renderStep2();
+            else if (state.step === 3) renderStep3();
+            else if (state.step === 4) renderStep4();
+
+            // Reinicializa ícones Lucide após injetar HTML
+            lucide.createIcons();
+        }
+
+        // --- PASSO 1: Upload de Fotos ---
+        function renderStep1() {
+            const content = document.createElement('div');
+            content.className = "flex-1 flex flex-col fade-in";
+            content.innerHTML = `
+                <h2 class="text-2xl font-bold mb-2">Análise Biomecânica</h2>
+                <p class="text-gray-400 mb-8 text-sm">A IA comparará sua composição corporal atual com a meta.</p>
+                
+                <div class="space-y-4 flex-1">
+                    <!-- Foto Atual -->
+                    <div class="relative group cursor-pointer" onclick="document.getElementById('file-current').click()">
+                        <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-30 group-hover:opacity-75 transition duration-500 blur"></div>
+                        <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center overflow-hidden border border-gray-700">
+                            <input type="file" id="file-current" class="hidden" accept="image/*">
+                            ${state.currentPhoto ? 
+                                `<img src="${state.currentPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
+                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>` 
+                                : 
+                                `<div class="text-center">
+                                    <i data-lucide="camera" class="w-8 h-8 mx-auto text-gray-500 mb-2"></i>
+                                    <span class="text-sm font-medium text-gray-400">Seu Corpo Atual</span>
+                                </div>`
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Foto Meta -->
+                    <div class="relative group cursor-pointer" onclick="document.getElementById('file-goal').click()">
+                        <div class="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-600 rounded-2xl opacity-30 group-hover:opacity-75 transition duration-500 blur"></div>
+                        <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center overflow-hidden border border-gray-700">
+                            <input type="file" id="file-goal" class="hidden" accept="image/*">
+                            ${state.goalPhoto ? 
+                                `<img src="${state.goalPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
+                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>` 
+                                : 
+                                `<div class="text-center">
+                                    <i data-lucide="user" class="w-8 h-8 mx-auto text-gray-500 mb-2"></i>
+                                    <span class="text-sm font-medium text-gray-400">Físico Meta</span>
+                                </div>`
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-next-1" class="mt-6 w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg ${state.currentPhoto && state.goalPhoto ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-blue-500/25' : 'bg-gray-800 text-gray-600 cursor-not-allowed'}" ${!state.currentPhoto || !state.goalPhoto ? 'disabled' : ''}>
+                    Próximo Passo <i data-lucide="arrow-right" width="18"></i>
+                </button>
+            `;
+            container.appendChild(content);
+
+            // Event Listeners
+            document.getElementById('file-current').addEventListener('change', (e) => handleImage(e, 'current'));
+            document.getElementById('file-goal').addEventListener('change', (e) => handleImage(e, 'goal'));
+            document.getElementById('btn-next-1').addEventListener('click', () => {
+                if(state.currentPhoto && state.goalPhoto) {
+                    state.step = 2;
+                    render();
+                }
+            });
+        }
+
+        // --- PASSO 2: Preferências (Com LocalStorage) ---
+        function renderStep2() {
+            const content = document.createElement('div');
+            content.className = "flex-1 flex flex-col fade-in";
+            content.innerHTML = `
+                <h2 class="text-2xl font-bold mb-2">Preferências</h2>
+                <p class="text-gray-400 mb-8 text-sm">Configurações salvas automaticamente.</p>
+
+                <div class="space-y-8 flex-1">
+                    <!-- Slider Frequência -->
+                    <div class="bg-gray-800/50 p-5 rounded-2xl border border-gray-700/50">
+                        <div class="flex justify-between mb-4">
+                            <label class="flex items-center gap-2 text-gray-200 font-medium">
+                                <i data-lucide="calendar" class="w-5 h-5 text-blue-500"></i> Frequência
+                            </label>
+                            <span id="freq-val" class="text-2xl font-bold text-blue-400">${state.frequency}x</span>
+                        </div>
+                        <input type="range" id="freq-range" min="3" max="6" value="${state.frequency}" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        <p id="freq-desc" class="text-xs text-gray-500 mt-3"></p>
+                    </div>
+
+                    <!-- Seleção Duração -->
+                    <div class="bg-gray-800/50 p-5 rounded-2xl border border-gray-700/50">
+                        <label class="flex items-center gap-2 text-gray-200 mb-4 font-medium">
+                            <i data-lucide="clock" class="w-5 h-5 text-purple-500"></i> Duração (min)
+                        </label>
+                        <div class="grid grid-cols-3 gap-3" id="dur-container">
+                            <!-- Botões gerados via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-analyze" class="mt-6 w-full py-4 rounded-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform">
+                    <i data-lucide="zap" width="20" class="fill-white"></i> Analisar e Criar Treino
+                </button>
+            `;
+            container.appendChild(content);
+
+            // Setup Lógica do DOM do Passo 2
+            const range = document.getElementById('freq-range');
+            const valDisplay = document.getElementById('freq-val');
+            const descDisplay = document.getElementById('freq-desc');
+            
+            const updateFreq = (val) => {
+                state.frequency = parseInt(val);
+                valDisplay.textContent = state.frequency + 'x';
+                descDisplay.textContent = state.frequency > 4 ? "Recomendado para Definição/Perda de Peso" : "Recomendado para Hipertrofia/Força";
+                localStorage.setItem('fitgoal_frequency', state.frequency); // Save to LocalStorage
+            };
+            
+            updateFreq(state.frequency); // Init
+            range.addEventListener('input', (e) => updateFreq(e.target.value));
+
+            // Duração Buttons
+            const durContainer = document.getElementById('dur-container');
+            [30, 45, 60, 90].forEach(time => {
+                const btn = document.createElement('button');
+                const isActive = state.duration === time;
+                btn.className = `py-3 rounded-xl text-sm font-bold border-2 transition-all ${isActive ? 'border-purple-500 bg-purple-500/20 text-purple-300' : 'border-transparent bg-gray-800 text-gray-400 hover:bg-gray-700'}`;
+                btn.textContent = time + ' min';
+                btn.onclick = () => {
+                    state.duration = time;
+                    localStorage.setItem('fitgoal_duration', time); // Save to LocalStorage
+                    renderStep2(); // Re-render to update active class
+                };
+                durContainer.appendChild(btn);
+            });
+
+            document.getElementById('btn-analyze').onclick = () => {
+                state.step = 3;
+                render();
+            };
+        }
+
+        // --- PASSO 3: Análise (Loading) ---
+        function renderStep3() {
+            // Trigger da lógica de geração assim que renderizar
+            if (!state.isAnalyzing) {
+                generateWorkoutLogic();
+            }
+
+            const content = document.createElement('div');
+            content.className = "flex-1 flex flex-col items-center justify-center text-center fade-in px-4";
+            content.innerHTML = `
+                <div class="relative w-40 h-40 mb-8">
+                    <div class="absolute inset-0 border-2 border-blue-500/30 rounded-lg overflow-hidden">
+                        <div class="w-full h-1 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,1)] absolute animate-scan"></div>
+                    </div>
+                    <div class="absolute inset-2 flex gap-1 opacity-50">
+                            <div class="flex-1 bg-gray-700 rounded-l animate-pulse"></div>
+                            <div class="flex-1 bg-gray-600 rounded-r animate-pulse" style="animation-delay: 0.1s"></div>
+                    </div>
+                </div>
+                <h3 class="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Calculando Variáveis...</h3>
+                <div class="space-y-2 text-sm text-gray-400">
+                    <p class="fade-in">Comparando massa muscular...</p>
+                </div>
+            `;
+            container.appendChild(content);
+        }
+
+        // --- PASSO 4: Resultado (Salvar no Firebase) ---
+        function renderStep4() {
+            if (!state.generatedPlan) return;
+            const p = state.generatedPlan;
+
+            const content = document.createElement('div');
+            content.className = "flex-1 flex flex-col fade-in pb-20";
+            
+            // Constrói HTML da lista de exercícios
+            let scheduleHTML = '';
+            p.schedule.forEach(day => {
+                let exsHTML = '';
+                day.exercises.forEach(ex => {
+                    exsHTML += `
+                        <div class="relative pl-4 border-l-2 border-gray-700 hover:border-blue-500 transition-colors mb-4 last:mb-0">
+                            <div class="flex justify-between items-start mb-1">
+                                <span class="text-gray-200 font-medium">${ex.name}</span>
+                                <span class="text-gray-400 font-mono text-sm bg-gray-900 px-2 rounded">${ex.sets}</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                                    <i data-lucide="scale" width="10"></i> 
+                                    <span>Técnica: <span class="text-gray-300">${ex.technique}</span></span>
+                                </div>
+                                <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                                    <i data-lucide="clock" width="10"></i> 
+                                    <span>Cadência: <span class="text-gray-300 tracking-widest">${ex.cadence}</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                scheduleHTML += `
+                    <div class="bg-gray-800/40 rounded-2xl overflow-hidden border border-gray-700/50 mb-4">
+                        <div class="bg-gray-800/80 px-4 py-3 flex justify-between items-center border-b border-gray-700/50">
+                            <span class="text-white font-bold">${day.day}</span>
+                            <span class="text-xs font-bold text-blue-400 bg-blue-400/10 px-2 py-1 rounded">${day.focus}</span>
+                        </div>
+                        <div class="p-4">
+                            ${exsHTML}
+                        </div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = `
+                <div class="mb-6">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-green-500/20 text-green-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                            <i data-lucide="check-circle" width="10"></i> Plano Salvo no Banco
+                        </span>
+                        <span class="text-gray-500 text-xs">Hoje</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white leading-tight">${p.strategy.title}</h2>
+                </div>
+
+                <div class="bg-gray-800/80 backdrop-blur border border-gray-700 p-5 rounded-2xl mb-6 shadow-xl">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-gradient-to-br from-blue-500 to-purple-600 p-3 rounded-xl shadow-lg shadow-purple-500/20">
+                            <i data-lucide="activity" class="text-white w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-gray-100 mb-2">Análise da IA</h4>
+                            <p class="text-sm text-gray-400 leading-relaxed">${p.strategy.analysis}</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 grid grid-cols-2 gap-3 pt-4 border-t border-gray-700">
+                         <div>
+                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Ritmo</span>
+                            <p class="text-sm text-blue-300 font-medium mt-1">${p.strategy.tempoDesc}</p>
+                         </div>
+                         <div>
+                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Intervalo</span>
+                            <p class="text-sm text-blue-300 font-medium mt-1">${p.strategy.restTime}</p>
+                         </div>
+                    </div>
+                </div>
+
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2 text-white">
+                    <i data-lucide="dumbbell" class="text-blue-500 w-5 h-5"></i> Sua Rotina
+                </h3>
+                
+                <div class="space-y-4">
+                    ${scheduleHTML}
+                </div>
+
+                <div class="fixed bottom-6 left-0 right-0 px-6 max-w-md mx-auto z-20">
+                     <button id="btn-restart" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-blue-900/50 transition-all">
+                        <i data-lucide="rotate-ccw" width="18"></i> Gerar Nova Análise
+                     </button>
+                </div>
+            `;
+            container.appendChild(content);
+
+            document.getElementById('btn-restart').onclick = () => {
+                state.step = 1;
+                state.currentPhoto = null;
+                state.goalPhoto = null;
+                render();
+            };
+        }
+
+        // --- Helpers ---
+
+        function handleImage(e, type) {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                if (type === 'current') state.currentPhoto = url;
+                else state.goalPhoto = url;
+                renderStep1(); // Re-render to show preview
+            }
+        }
+
+        function generateWorkoutLogic() {
+            state.isAnalyzing = true;
+            
+            // Simulação de delay da IA (3 segundos)
+            setTimeout(async () => {
+                const mockType = state.frequency > 4 ? "definition" : "hypertrophy";
+                const plan = createMockPlan(state.frequency, state.duration, mockType);
+                
+                // --- FIREBASE: SALVAR TREINO ---
+                // Só salva se o usuário estiver autenticado
+                if (currentUser) {
+                    try {
+                        // Regra: artifacts/{appId}/users/{userId}/workouts
+                        const workoutsRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'workouts');
+                        await addDoc(workoutsRef, {
+                            ...plan,
+                            createdAt: serverTimestamp(),
+                            userPreferences: {
+                                frequency: state.frequency,
+                                duration: state.duration
+                            }
+                        });
+                        console.log("Treino salvo no Firestore com sucesso!");
+                    } catch (err) {
+                        console.error("Erro ao salvar no Firestore:", err);
+                    }
+                }
+
+                state.generatedPlan = plan;
+                state.isAnalyzing = false;
+                state.step = 4;
+                render();
+            }, 3000);
+        }
+
+        function createMockPlan(days, time, type) {
+            const isCutting = type === "definition";
+            const splits = {
+              3: "Full Body (Frequência Alta)",
+              4: "AB Upper/Lower (Equilíbrio)",
+              5: "ABC Upper/Lower (Foco Isolado)",
+              6: "Push/Pull/Legs (Volume Alto)"
+            };
+            const strategy = isCutting ? {
+                title: "Definição Máxima & Queima",
+                analysis: "A IA detectou estrutura sólida sob gordura moderada. Foco em acelerar metabolismo.",
+                tempoDesc: "Rápido na subida (2-0-1-0)",
+                restTime: "45-60 segundos",
+                loadTip: "Carga Moderada (RPE 7-8)"
+            } : {
+                title: "Hipertrofia & Volume Bruto",
+                analysis: "Foco em tensão mecânica para deltoides e peitoral superior. Prioridade: Carga.",
+                tempoDesc: "Lento (3-0-1-1)",
+                restTime: "90-120 segundos",
+                loadTip: "Carga Alta (RPE 9-10)"
+            };
+
+            return {
+              splitName: splits[days] || "Personalizado",
+              strategy: strategy,
+              estimatedTime: `${time} minutos`,
+              schedule: Array.from({ length: days }).map((_, i) => ({
+                day: `Dia ${i + 1}`,
+                focus: i % 2 === 0 ? "Empurrar" : "Puxar",
+                exercises: [
+                  { 
+                    name: i % 2 === 0 ? "Supino Inclinado" : "Puxada Alta", 
+                    sets: isCutting ? "4x12-15" : "4x6-8",
+                    technique: isCutting ? "Sem descanso no topo" : "Pico de contração 1s",
+                    cadence: isCutting ? "2010" : "3011"
+                  },
+                  { 
+                    name: "Agachamento Livre", 
+                    sets: "4x10",
+                    technique: "Amplitude máxima",
+                    cadence: "3010"
+                  }
+                ]
+              }))
+            };
+        }
+
+        // Renderização inicial
+        render();
+
+    </script>
+</body>
+</html>
