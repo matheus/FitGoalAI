@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FitGoal AI - Gerador de Treinos</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -15,35 +16,71 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
         /* Animações Customizadas */
         @keyframes scan {
-            0% { top: 0; opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { top: 100%; opacity: 0; }
+            0% {
+                top: 0;
+                opacity: 0;
+            }
+
+            10% {
+                opacity: 1;
+            }
+
+            90% {
+                opacity: 1;
+            }
+
+            100% {
+                top: 100%;
+                opacity: 0;
+            }
         }
-        .animate-scan { animation: scan 2s linear infinite; }
-        
-        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+
+        .animate-scan {
+            animation: scan 2s linear infinite;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Esconder scrollbar mas manter funcionalidade */
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
     </style>
 </head>
+
 <body class="bg-gray-950 text-white min-h-screen flex justify-center">
 
     <!-- Container Principal (Mobile View) -->
     <div class="w-full max-w-md bg-gray-900 min-h-screen shadow-2xl relative border-x border-gray-800 flex flex-col">
-        
+
         <!-- Header -->
-        <header class="p-6 flex items-center justify-between z-10 bg-gray-900/95 backdrop-blur-sm sticky top-0 border-b border-gray-800">
+        <header
+            class="p-6 flex items-center justify-between z-10 bg-gray-900/95 backdrop-blur-sm sticky top-0 border-b border-gray-800">
             <div class="flex items-center gap-2">
                 <div class="bg-blue-600 p-1.5 rounded-lg">
                     <i data-lucide="activity" class="text-white w-5 h-5"></i>
@@ -54,17 +91,19 @@
                 Voltar
             </button>
             <!-- Indicador de Status do Firebase -->
-            <div id="firebase-status" class="w-2 h-2 rounded-full bg-red-500" title="Desconectado"></div>
+            <div id="firebase-status" class="w-2 h-2 rounded-full bg-gray-600" title="Verificando conexão..."></div>
         </header>
 
         <!-- Conteúdo Principal -->
         <main id="app-content" class="flex-1 p-6 flex flex-col relative z-10 overflow-y-auto scrollbar-hide">
             <!-- Os passos serão injetados aqui via JavaScript -->
         </main>
-        
+
         <!-- Background Decorativo -->
         <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-            <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[100px]"></div>
+            <div
+                class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[100px]">
+            </div>
             <div class="absolute bottom-0 right-0 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[80px]"></div>
         </div>
 
@@ -77,13 +116,28 @@
         import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         // --- Configuração do Firebase ---
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
+        // Tratamento de erro robusto para evitar crash se a config estiver ausente
+        let app, auth, db;
+        let isFirebaseAvailable = false;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
         let currentUser = null;
+
+        try {
+            const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+            // Só inicializa se tivermos uma API Key válida
+            if (firebaseConfig && firebaseConfig.apiKey) {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                isFirebaseAvailable = true;
+                console.log("Firebase inicializado com sucesso.");
+            } else {
+                console.warn("Configuração do Firebase ausente. O app funcionará em modo Offline.");
+                document.getElementById('firebase-status').title = "Modo Offline (Demo)";
+            }
+        } catch (e) {
+            console.error("Erro ao inicializar Firebase:", e);
+        }
 
         // --- Estado da Aplicação ---
         const state = {
@@ -99,6 +153,8 @@
 
         // --- Autenticação Firebase ---
         async function initAuth() {
+            if (!isFirebaseAvailable) return;
+
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
@@ -110,18 +166,33 @@
             }
         }
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('firebase-status').className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]";
-                document.getElementById('firebase-status').title = "Conectado";
-                console.log("Usuário conectado:", user.uid);
-            } else {
-                document.getElementById('firebase-status').className = "w-2 h-2 rounded-full bg-red-500";
+        if (isFirebaseAvailable) {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    const statusEl = document.getElementById('firebase-status');
+                    if (statusEl) {
+                        statusEl.className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]";
+                        statusEl.title = "Conectado à Nuvem";
+                    }
+                    console.log("Usuário conectado:", user.uid);
+                } else {
+                    const statusEl = document.getElementById('firebase-status');
+                    if (statusEl) {
+                        statusEl.className = "w-2 h-2 rounded-full bg-red-500";
+                        statusEl.title = "Desconectado";
+                    }
+                }
+            });
+            initAuth();
+        } else {
+            // Atualiza UI para modo offline
+            const statusEl = document.getElementById('firebase-status');
+            if (statusEl) {
+                statusEl.className = "w-2 h-2 rounded-full bg-yellow-500";
+                statusEl.title = "Modo Offline";
             }
-        });
-
-        initAuth();
+        }
 
         // --- Lógica de Renderização ---
 
@@ -157,7 +228,7 @@
             else if (state.step === 4) renderStep4();
 
             // Reinicializa ícones Lucide após injetar HTML
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         }
 
         // --- PASSO 1: Upload de Fotos ---
@@ -174,15 +245,15 @@
                         <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-30 group-hover:opacity-75 transition duration-500 blur"></div>
                         <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center overflow-hidden border border-gray-700">
                             <input type="file" id="file-current" class="hidden" accept="image/*">
-                            ${state.currentPhoto ? 
-                                `<img src="${state.currentPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
-                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>` 
-                                : 
-                                `<div class="text-center">
+                            ${state.currentPhoto ?
+                    `<img src="${state.currentPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
+                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>`
+                    :
+                    `<div class="text-center">
                                     <i data-lucide="camera" class="w-8 h-8 mx-auto text-gray-500 mb-2"></i>
                                     <span class="text-sm font-medium text-gray-400">Seu Corpo Atual</span>
                                 </div>`
-                            }
+                }
                         </div>
                     </div>
 
@@ -191,15 +262,15 @@
                         <div class="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-600 rounded-2xl opacity-30 group-hover:opacity-75 transition duration-500 blur"></div>
                         <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center overflow-hidden border border-gray-700">
                             <input type="file" id="file-goal" class="hidden" accept="image/*">
-                            ${state.goalPhoto ? 
-                                `<img src="${state.goalPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
-                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>` 
-                                : 
-                                `<div class="text-center">
+                            ${state.goalPhoto ?
+                    `<img src="${state.goalPhoto}" class="w-full h-full object-cover rounded-xl opacity-80">
+                                 <div class="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full shadow-lg"><i data-lucide="check-circle" width="14"></i></div>`
+                    :
+                    `<div class="text-center">
                                     <i data-lucide="user" class="w-8 h-8 mx-auto text-gray-500 mb-2"></i>
                                     <span class="text-sm font-medium text-gray-400">Físico Meta</span>
                                 </div>`
-                            }
+                }
                         </div>
                     </div>
                 </div>
@@ -213,8 +284,9 @@
             // Event Listeners
             document.getElementById('file-current').addEventListener('change', (e) => handleImage(e, 'current'));
             document.getElementById('file-goal').addEventListener('change', (e) => handleImage(e, 'goal'));
-            document.getElementById('btn-next-1').addEventListener('click', () => {
-                if(state.currentPhoto && state.goalPhoto) {
+            const btn = document.getElementById('btn-next-1');
+            if (btn) btn.addEventListener('click', () => {
+                if (state.currentPhoto && state.goalPhoto) {
                     state.step = 2;
                     render();
                 }
@@ -263,14 +335,14 @@
             const range = document.getElementById('freq-range');
             const valDisplay = document.getElementById('freq-val');
             const descDisplay = document.getElementById('freq-desc');
-            
+
             const updateFreq = (val) => {
                 state.frequency = parseInt(val);
                 valDisplay.textContent = state.frequency + 'x';
                 descDisplay.textContent = state.frequency > 4 ? "Recomendado para Definição/Perda de Peso" : "Recomendado para Hipertrofia/Força";
                 localStorage.setItem('fitgoal_frequency', state.frequency); // Save to LocalStorage
             };
-            
+
             updateFreq(state.frequency); // Init
             range.addEventListener('input', (e) => updateFreq(e.target.value));
 
@@ -329,7 +401,7 @@
 
             const content = document.createElement('div');
             content.className = "flex-1 flex flex-col fade-in pb-20";
-            
+
             // Constrói HTML da lista de exercícios
             let scheduleHTML = '';
             p.schedule.forEach(day => {
@@ -368,12 +440,15 @@
                 `;
             });
 
+            // Determina mensagem de status
+            const statusMsg = isFirebaseAvailable && currentUser
+                ? `<span class="bg-green-500/20 text-green-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i data-lucide="check-circle" width="10"></i> Salvo na Nuvem</span>`
+                : `<span class="bg-yellow-500/20 text-yellow-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i data-lucide="wifi-off" width="10"></i> Modo Offline (Não salvo)</span>`;
+
             content.innerHTML = `
                 <div class="mb-6">
                     <div class="flex items-center gap-2 mb-2">
-                        <span class="bg-green-500/20 text-green-400 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                            <i data-lucide="check-circle" width="10"></i> Plano Salvo no Banco
-                        </span>
+                        ${statusMsg}
                         <span class="text-gray-500 text-xs">Hoje</span>
                     </div>
                     <h2 class="text-2xl font-bold text-white leading-tight">${p.strategy.title}</h2>
@@ -439,17 +514,16 @@
 
         function generateWorkoutLogic() {
             state.isAnalyzing = true;
-            
+
             // Simulação de delay da IA (3 segundos)
             setTimeout(async () => {
                 const mockType = state.frequency > 4 ? "definition" : "hypertrophy";
                 const plan = createMockPlan(state.frequency, state.duration, mockType);
-                
+
                 // --- FIREBASE: SALVAR TREINO ---
-                // Só salva se o usuário estiver autenticado
-                if (currentUser) {
+                // Só tenta salvar se o Firebase estiver disponível e o usuário logado
+                if (isFirebaseAvailable && currentUser && db) {
                     try {
-                        // Regra: artifacts/{appId}/users/{userId}/workouts
                         const workoutsRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'workouts');
                         await addDoc(workoutsRef, {
                             ...plan,
@@ -461,8 +535,10 @@
                         });
                         console.log("Treino salvo no Firestore com sucesso!");
                     } catch (err) {
-                        console.error("Erro ao salvar no Firestore:", err);
+                        console.error("Erro ao salvar no Firestore (possível erro de permissão ou rede):", err);
                     }
+                } else {
+                    console.log("Modo Offline: Treino gerado mas não salvo na nuvem.");
                 }
 
                 state.generatedPlan = plan;
@@ -475,10 +551,10 @@
         function createMockPlan(days, time, type) {
             const isCutting = type === "definition";
             const splits = {
-              3: "Full Body (Frequência Alta)",
-              4: "AB Upper/Lower (Equilíbrio)",
-              5: "ABC Upper/Lower (Foco Isolado)",
-              6: "Push/Pull/Legs (Volume Alto)"
+                3: "Full Body (Frequência Alta)",
+                4: "AB Upper/Lower (Equilíbrio)",
+                5: "ABC Upper/Lower (Foco Isolado)",
+                6: "Push/Pull/Legs (Volume Alto)"
             };
             const strategy = isCutting ? {
                 title: "Definição Máxima & Queima",
@@ -495,27 +571,27 @@
             };
 
             return {
-              splitName: splits[days] || "Personalizado",
-              strategy: strategy,
-              estimatedTime: `${time} minutos`,
-              schedule: Array.from({ length: days }).map((_, i) => ({
-                day: `Dia ${i + 1}`,
-                focus: i % 2 === 0 ? "Empurrar" : "Puxar",
-                exercises: [
-                  { 
-                    name: i % 2 === 0 ? "Supino Inclinado" : "Puxada Alta", 
-                    sets: isCutting ? "4x12-15" : "4x6-8",
-                    technique: isCutting ? "Sem descanso no topo" : "Pico de contração 1s",
-                    cadence: isCutting ? "2010" : "3011"
-                  },
-                  { 
-                    name: "Agachamento Livre", 
-                    sets: "4x10",
-                    technique: "Amplitude máxima",
-                    cadence: "3010"
-                  }
-                ]
-              }))
+                splitName: splits[days] || "Personalizado",
+                strategy: strategy,
+                estimatedTime: `${time} minutos`,
+                schedule: Array.from({ length: days }).map((_, i) => ({
+                    day: `Dia ${i + 1}`,
+                    focus: i % 2 === 0 ? "Empurrar" : "Puxar",
+                    exercises: [
+                        {
+                            name: i % 2 === 0 ? "Supino Inclinado" : "Puxada Alta",
+                            sets: isCutting ? "4x12-15" : "4x6-8",
+                            technique: isCutting ? "Sem descanso no topo" : "Pico de contração 1s",
+                            cadence: isCutting ? "2010" : "3011"
+                        },
+                        {
+                            name: "Agachamento Livre",
+                            sets: "4x10",
+                            technique: "Amplitude máxima",
+                            cadence: "3010"
+                        }
+                    ]
+                }))
             };
         }
 
@@ -524,4 +600,5 @@
 
     </script>
 </body>
+
 </html>
