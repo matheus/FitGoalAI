@@ -64,9 +64,9 @@ app.post('/api/generate-workout', upload.none(), async (req, res) => {
 
         // Inicializa IA
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        // REMOVIDO: generationConfig com responseMimeType que causava erro 400
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
-            generationConfig: { responseMimeType: "application/json" }
+            model: "gemini-1.5-flash"
         });
 
         // Prompt
@@ -75,6 +75,9 @@ app.post('/api/generate-workout', upload.none(), async (req, res) => {
             Analise a "Imagem A" (Corpo Atual) e a "Imagem B" (Meta).
             Contexto: ${frequency} dias/semana, ${duration} min/treino.
             Crie um plano JSON para transformar o corpo A no corpo B.
+            
+            IMPORTANTE: Responda APENAS com o JSON cru, sem formatação markdown ou blocos de código.
+            
             Estrutura JSON Obrigatória:
             {
                 "title": "Nome do Treino",
@@ -96,7 +99,10 @@ app.post('/api/generate-workout', upload.none(), async (req, res) => {
         // Chama Gemini
         const result = await model.generateContent([prompt, ...imageParts]);
         const responseText = result.response.text();
-        const workoutJson = JSON.parse(responseText);
+
+        // Limpeza do JSON: Remove blocos de código markdown (```json ... ```) se a IA insistir em enviá-los
+        const cleanedJson = responseText.replace(/```json|```/g, '').trim();
+        const workoutJson = JSON.parse(cleanedJson);
 
         // Salva no SQLite
         const insert = db.prepare('INSERT INTO workouts (title, analysis, full_plan_json) VALUES (?, ?, ?)');
