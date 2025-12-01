@@ -94,9 +94,15 @@ app.get('/api/history', (req, res) => {
     res.json(history);
 });
 
+// Rota de Health Check (Para o EasyPanel saber que o app está vivo)
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Iniciar Servidor
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
+// A MUDANÇA ESTÁ AQUI: Adicionamos '0.0.0.0' explicitamente
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT} e acessível externamente`);
     // Garante que a pasta de dados existe
     if (!fs.existsSync('data')) {
         fs.mkdirSync('data');
