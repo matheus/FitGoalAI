@@ -10,9 +10,15 @@ const app = express();
 const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // Limite 5MB
 const PORT = process.env.PORT || 3000;
 
+// --- CORREÇÃO: Cria a pasta 'data' ANTES de tentar abrir o banco ---
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+    console.log(`Criando diretório de dados em: ${dataDir}`);
+    fs.mkdirSync(dataDir);
+}
+
 // Inicializa Banco de Dados SQLite
-// O arquivo será criado automaticamente na pasta do projeto
-const db = new Database('data/fitgoal.db');
+const db = new Database(path.join(dataDir, 'fitgoal.db'));
 db.exec(`
   CREATE TABLE IF NOT EXISTS workouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,11 +106,17 @@ app.get('/health', (req, res) => {
 });
 
 // Iniciar Servidor
-// A MUDANÇA ESTÁ AQUI: Adicionamos '0.0.0.0' explicitamente
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor rodando na porta ${PORT} e acessível externamente`);
-    // Garante que a pasta de dados existe
-    if (!fs.existsSync('data')) {
-        fs.mkdirSync('data');
-    }
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT} (0.0.0.0)`);
+    console.log(`Diretório de dados: ${dataDir}`);
+});
+
+// Tratamento Gracioso de Shutdown (Evita erros feios de SIGTERM no log)
+process.on('SIGTERM', () => {
+    console.log('SIGTERM recebido. Fechando servidor...');
+    server.close(() => {
+        console.log('Servidor fechado.');
+        db.close();
+        process.exit(0);
+    });
 });
