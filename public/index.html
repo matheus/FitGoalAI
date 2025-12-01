@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitGoal AI (Self-Hosted)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes scan {
+            0% {
+                top: 0;
+                opacity: 0;
+            }
+
+            10% {
+                opacity: 1;
+            }
+
+            90% {
+                opacity: 1;
+            }
+
+            100% {
+                top: 100%;
+                opacity: 0;
+            }
+        }
+
+        .animate-scan {
+            animation: scan 2s linear infinite;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-950 text-white min-h-screen flex justify-center">
+
+    <div class="w-full max-w-md bg-gray-900 min-h-screen shadow-2xl relative border-x border-gray-800 flex flex-col">
+        <header
+            class="p-6 flex items-center justify-between z-10 bg-gray-900/95 backdrop-blur-sm sticky top-0 border-b border-gray-800">
+            <div class="flex items-center gap-2">
+                <div class="bg-purple-600 p-1.5 rounded-lg"><i data-lucide="dumbbell" class="text-white w-5 h-5"></i>
+                </div>
+                <h1 class="text-xl font-bold tracking-tight">FitGoal <span class="text-purple-500">VPS</span></h1>
+            </div>
+            <button id="btn-back" class="hidden text-gray-400 hover:text-white text-sm font-medium">Voltar</button>
+        </header>
+
+        <main id="app-content" class="flex-1 p-6 flex flex-col relative z-10 overflow-y-auto scrollbar-hide"></main>
+    </div>
+
+    <script>
+        // Estado
+        const state = {
+            step: 1,
+            currentPhotoBlob: null,
+            goalPhotoBlob: null,
+            currentPhotoUrl: null,
+            goalPhotoUrl: null,
+            frequency: 4,
+            duration: 60,
+            generatedPlan: null
+        };
+
+        const container = document.getElementById('app-content');
+        const btnBack = document.getElementById('btn-back');
+
+        function render() {
+            if (state.step > 1 && state.step < 4) {
+                btnBack.classList.remove('hidden');
+                btnBack.onclick = () => { state.step--; render(); };
+            } else { btnBack.classList.add('hidden'); }
+
+            container.innerHTML = '';
+
+            // Renderiza Step
+            if (state.step === 1) renderStep1();
+            else if (state.step === 2) renderStep2();
+            else if (state.step === 3) renderStep3();
+            else if (state.step === 4) renderStep4();
+
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function renderStep1() {
+            container.innerHTML = `
+                <div class="flex-1 flex flex-col fade-in">
+                    <h2 class="text-2xl font-bold mb-2">Suas Fotos</h2>
+                    <p class="text-gray-400 mb-8 text-sm">O processamento é feito na sua VPS privada.</p>
+                    <div class="space-y-4 flex-1">
+                        <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center border border-gray-700 cursor-pointer" onclick="document.getElementById('file-current').click()">
+                            <input type="file" id="file-current" class="hidden" accept="image/*">
+                            ${state.currentPhotoUrl ? `<img src="${state.currentPhotoUrl}" class="w-full h-full object-cover rounded-xl opacity-80">` : `<div class="text-center text-gray-400"><i data-lucide="camera" class="mx-auto mb-2"></i><span>Atual</span></div>`}
+                        </div>
+                        <div class="relative bg-gray-800 rounded-2xl p-1 h-40 flex items-center justify-center border border-gray-700 cursor-pointer" onclick="document.getElementById('file-goal').click()">
+                            <input type="file" id="file-goal" class="hidden" accept="image/*">
+                            ${state.goalPhotoUrl ? `<img src="${state.goalPhotoUrl}" class="w-full h-full object-cover rounded-xl opacity-80">` : `<div class="text-center text-gray-400"><i data-lucide="user" class="mx-auto mb-2"></i><span>Meta</span></div>`}
+                        </div>
+                    </div>
+                    <button id="btn-next" class="mt-6 w-full py-4 rounded-xl font-bold bg-purple-600 disabled:opacity-50" ${!state.currentPhotoUrl || !state.goalPhotoUrl ? 'disabled' : ''}>Continuar</button>
+                </div>
+            `;
+            document.getElementById('file-current').onchange = (e) => handleImage(e, 'current');
+            document.getElementById('file-goal').onchange = (e) => handleImage(e, 'goal');
+            document.getElementById('btn-next').onclick = () => { state.step = 2; render(); };
+        }
+
+        function renderStep2() {
+            container.innerHTML = `
+                <div class="flex-1 flex flex-col fade-in">
+                    <h2 class="text-2xl font-bold mb-6">Ajustes</h2>
+                    <div class="bg-gray-800 p-5 rounded-xl mb-4">
+                        <label class="block mb-2 font-bold">Frequência: <span class="text-purple-400">${state.frequency}x</span></label>
+                        <input type="range" min="3" max="6" value="${state.frequency}" class="w-full accent-purple-500" oninput="state.frequency = this.value; this.previousElementSibling.children[0].innerText = this.value + 'x'">
+                    </div>
+                    <div class="bg-gray-800 p-5 rounded-xl">
+                         <label class="block mb-4 font-bold">Duração</label>
+                         <div class="grid grid-cols-3 gap-2">
+                            ${[30, 45, 60, 90].map(t => `<button class="p-2 rounded border ${state.duration == t ? 'border-purple-500 bg-purple-500/20' : 'border-gray-700'}" onclick="state.duration=${t}; render()">${t} min</button>`).join('')}
+                         </div>
+                    </div>
+                    <button id="btn-generate" class="mt-6 w-full py-4 rounded-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600">Gerar Treino (Server)</button>
+                </div>
+            `;
+            document.getElementById('btn-generate').onclick = generateWorkout;
+        }
+
+        function renderStep3() {
+            container.innerHTML = `
+                <div class="flex-1 flex flex-col items-center justify-center text-center fade-in">
+                    <div class="relative w-32 h-32 mb-6">
+                        <div class="absolute inset-0 border-2 border-purple-500/30 rounded-lg overflow-hidden"><div class="w-full h-1 bg-purple-500 shadow-[0_0_15px_purple] absolute animate-scan"></div></div>
+                        <i data-lucide="server" class="w-16 h-16 text-gray-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-purple-400 mb-2">VPS Trabalhando...</h3>
+                    <p class="text-sm text-gray-400">Enviando dados para o servidor Node.js...</p>
+                </div>
+            `;
+        }
+
+        function renderStep4() {
+            const p = state.generatedPlan;
+            container.innerHTML = `
+                <div class="flex-1 flex flex-col fade-in pb-10">
+                    <h2 class="text-2xl font-bold mb-2">${p.title}</h2>
+                    <div class="text-sm text-gray-300 bg-gray-800 p-4 rounded-xl mb-4">${p.analysis}</div>
+                    <div class="space-y-3">
+                        ${p.schedule.map(d => `
+                            <div class="bg-gray-800/50 p-3 rounded-xl border border-gray-700">
+                                <div class="flex justify-between mb-2"><span class="font-bold text-white">${d.day}</span> <span class="text-xs bg-purple-500/20 text-purple-300 px-2 rounded py-0.5">${d.focus}</span></div>
+                                ${d.exercises.map(e => `<div class="flex justify-between text-sm text-gray-400"><span>${e.name}</span><span>${e.sets}</span></div>`).join('')}
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button class="mt-6 w-full py-4 bg-gray-700 rounded-xl font-bold" onclick="state.step=1; render()">Novo Treino</button>
+                </div>
+            `;
+        }
+
+        // Helpers
+        function handleImage(e, type) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                // Resize logic simples para não sobrecarregar upload
+                const img = new Image();
+                img.onload = () => {
+                    const cvs = document.createElement('canvas');
+                    const scale = 800 / img.width;
+                    cvs.width = 800; cvs.height = img.height * scale;
+                    cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
+                    const data = cvs.toDataURL('image/jpeg', 0.7);
+                    if (type === 'current') { state.currentPhotoUrl = data; state.currentPhotoBlob = data.split(',')[1]; }
+                    else { state.goalPhotoUrl = data; state.goalPhotoBlob = data.split(',')[1]; }
+                    render();
+                };
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function generateWorkout() {
+            state.step = 3; render();
+            try {
+                const res = await fetch('/api/generate-workout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        currentImage: state.currentPhotoBlob,
+                        goalImage: state.goalPhotoBlob,
+                        frequency: state.frequency,
+                        duration: state.duration
+                    })
+                });
+                if (!res.ok) throw new Error(await res.text());
+                state.generatedPlan = await res.json();
+                state.step = 4; render();
+            } catch (err) {
+                alert("Erro: " + err.message);
+                state.step = 2; render();
+            }
+        }
+
+        render();
+    </script>
+</body>
+
+</html>
