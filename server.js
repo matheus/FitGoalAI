@@ -7,7 +7,7 @@ const fs = require('fs');
 
 // Configuração Básica
 const app = express();
-const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // Limite 5MB
+const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // Limite 5MB (Para Multipart)
 const PORT = process.env.PORT || 3000;
 
 // Middleware de Log (DIAGNÓSTICO: Mostra quem está acessando o servidor)
@@ -37,7 +37,11 @@ db.exec(`
 
 // Middleware para servir arquivos estáticos (Frontend)
 app.use(express.static('public'));
-app.use(express.json());
+
+// --- CORREÇÃO DO ERRO PAYLOAD TOO LARGE ---
+// Aumentamos o limite do JSON para 50MB para aceitar as imagens em Base64
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Rota de Health Check (Prioritária para o EasyPanel)
 app.get('/health', (req, res) => {
@@ -82,7 +86,7 @@ app.post('/api/generate-workout', upload.none(), async (req, res) => {
         `;
 
         // Prepara imagens (Remove header base64 se existir)
-        const cleanBase64 = (str) => str.replace(/^data:image\/\w+;base64,/, "");
+        const cleanBase64 = (str) => str ? str.replace(/^data:image\/\w+;base64,/, "") : "";
 
         const imageParts = [
             { inlineData: { data: cleanBase64(currentImage), mimeType: "image/jpeg" } },
