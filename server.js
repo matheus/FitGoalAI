@@ -10,6 +10,12 @@ const app = express();
 const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // Limite 5MB
 const PORT = process.env.PORT || 3000;
 
+// Middleware de Log (DIAGNÓSTICO: Mostra quem está acessando o servidor)
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] Request recebido: ${req.method} ${req.url}`);
+    next();
+});
+
 // --- CORREÇÃO: Cria a pasta 'data' ANTES de tentar abrir o banco ---
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -32,6 +38,16 @@ db.exec(`
 // Middleware para servir arquivos estáticos (Frontend)
 app.use(express.static('public'));
 app.use(express.json());
+
+// Rota de Health Check (Prioritária para o EasyPanel)
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+// Rota Fallback para a Raiz (Caso o index.html falhe, o servidor ainda responde 200)
+app.get('/', (req, res) => {
+    res.status(200).send('FitGoal AI Server is Running. (Frontend not found via static)');
+});
 
 // Rota: Gerar Treino
 app.post('/api/generate-workout', upload.none(), async (req, res) => {
@@ -98,11 +114,6 @@ app.get('/api/history', (req, res) => {
         plan: JSON.parse(row.full_plan_json)
     }));
     res.json(history);
-});
-
-// Rota de Health Check (Para o EasyPanel saber que o app está vivo)
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
 });
 
 // Iniciar Servidor
